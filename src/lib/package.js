@@ -21,7 +21,8 @@ let drivers = {
     Stm32: Stm32,
     Stm32FP: Stm32FP,
     Stm32FPXL: Stm32FPXL,
-    Stm32FS: Stm32FS
+    Stm32FS: Stm32FS,
+    Stm32L0: Stm32L0
 };
 
 export { exceptions, usb, drivers, Stlinkv2, Logger, DEVICES, semihosting };

@@ -350,7 +350,7 @@ export default class WebStlink {
         } else if (flash_driver == "STM32FS") {
             this._driver = new libstlink.drivers.Stm32FS(this._stlink, this._dbg);
         } else if (flash_driver == "STM32L0") {
-            this._driver = new libstlink.drivers.Stm32FS(this._stlink, this._dbg);
+            this._driver = new libstlink.drivers.Stm32L0(this._stlink, this._dbg);
         }  
         else {
             this._driver = new libstlink.drivers.Stm32(this._stlink, this._dbg);
