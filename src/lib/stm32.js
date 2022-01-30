@@ -43,6 +43,31 @@ const DHCSR_STEP = DHCSR_KEY | DHCSR_DEBUGEN_BIT | DHCSR_STEP_BIT;
 
 const DEMCR_RUN_AFTER_RESET = 0x00000000;
 const DEMCR_HALT_AFTER_RESET = 0x00000001;
+SRAM_START = 0x20000000
+FLASH_START = 0x08000000
+
+AIRCR_REG = 0xe000ed0c
+DHCSR_REG = 0xe000edf0
+DEMCR_REG = 0xe000edfc
+
+AIRCR_KEY = 0x05fa0000
+AIRCR_SYSRESETREQ_BIT = 0x00000004
+AIRCR_SYSRESETREQ = AIRCR_KEY | AIRCR_SYSRESETREQ_BIT
+
+DHCSR_KEY = 0xa05f0000
+DHCSR_DEBUGEN_BIT = 0x00000001
+DHCSR_HALT_BIT = 0x00000002
+DHCSR_STEP_BIT = 0x00000004
+DHCSR_STATUS_ENABLE_BIT = DHCSR_DEBUGEN_BIT << 16
+DHCSR_STATUS_HALT_BIT = DHCSR_HALT_BIT << 16
+DHCSR_DEBUGDIS = DHCSR_KEY
+DHCSR_DEBUGEN = DHCSR_KEY | DHCSR_DEBUGEN_BIT
+DHCSR_HALT = DHCSR_KEY | DHCSR_DEBUGEN_BIT | DHCSR_HALT_BIT
+DHCSR_STEP = DHCSR_KEY | DHCSR_DEBUGEN_BIT | DHCSR_STEP_BIT
+DHCSR_HALTED = DHCSR_HALT_BIT | DHCSR_DEBUGEN_BIT | DHCSR_STATUS_HALT_BIT | DHCSR_STATUS_ENABLE_BIT
+
+DEMCR_RUN_AFTER_RESET = 0x00000000
+DEMCR_HALT_AFTER_RESET = 0x00000001
 
 class Stm32 {
     constructor(stlink, dbg) {
@@ -52,10 +77,12 @@ class Stm32 {
         this.SRAM_START = SRAM_START;
     }
 
+    //check
     is_reg(reg) {
         return REGISTERS.includes(reg.toUpperCase());
     }
 
+    // check
     async get_reg_all() {
         let registers = {};
         for (let reg of REGISTERS) {
@@ -64,6 +91,7 @@ class Stm32 {
         return registers;
     }
 
+    // check
     get_reg(reg) {
         this._dbg.debug(`Stm32.get_reg(${reg})`);
         let index = REGISTERS.indexOf(reg.toUpperCase());
@@ -73,6 +101,7 @@ class Stm32 {
         throw new Exception(`Wrong register name ${reg}`);
     }
 
+    //check
     set_reg(reg, value) {
         this._dbg.debug(`Stm32.set_reg(${reg}, 0x${H32(value)})`);
         let index = REGISTERS.indexOf(reg.toUpperCase());
@@ -82,6 +111,7 @@ class Stm32 {
         throw new Exception("Wrong register name");
     }
 
+    //check
     async get_mem(addr, size) {
         this._dbg.debug(`Stm32.get_mem(0x${H32(addr)}, ${size})`);
         if (size == 0) {
@@ -96,7 +126,10 @@ class Stm32 {
             chunks.push(chunk);
         }
         while (true) {
-            this._dbg.bargraph_update({"value": total});
+            this._dbg.bargraph_update({ "value": total });
+            //  # WORKAROUND for OS/X 10.11+
+            //   # ... read from ST-Link more than 64 bytes, must be performed even times
+
             let read_size = Math.min(((size - total) & 0xfffffff8), (this._stlink.maximum_transfer_size * 2));
             if (read_size == 0) {
                 break;
@@ -133,7 +166,7 @@ class Stm32 {
 
         return data;
     }
-
+    //check
     async set_mem(addr, data) {
         this._dbg.debug(`Stm32.set_mem(0x${H32(addr)}, [data:${data.length}Bytes])`);
         if (data.length == 0) {
@@ -146,7 +179,7 @@ class Stm32 {
             written_size = write_size;
         }
         while (true) {
-            this._dbg.bargraph_update({"value": written_size});
+            this._dbg.bargraph_update({ "value": written_size });
             let write_size = Math.min(((data.length - written_size) & 0xfffffff8), (this._stlink.maximum_transfer_size * 2));
             if (write_size == 0) {
                 break;
@@ -168,7 +201,7 @@ class Stm32 {
         this._dbg.bargraph_done();
         return;
     }
-
+    //check
     fill_mem(addr, size, pattern) {
         if (pattern > 0xff) {
             throw new Exception("Fill pattern can by 8 bit number");
@@ -185,7 +218,7 @@ class Stm32 {
         this._dbg.debug("Stm32.core_status()");
         return this._stlink.get_debugreg32(DHCSR_REG);
     }
-
+    //check
     async core_reset() {
         this._dbg.debug("Stm32.core_reset()");
         await this._stlink.set_debugreg32(DEMCR_REG, DEMCR_RUN_AFTER_RESET);
@@ -193,6 +226,7 @@ class Stm32 {
         await this._stlink.get_debugreg32(AIRCR_REG);
     }
 
+    //check
     async core_reset_halt() {
         this._dbg.debug("Stm32.core_reset_halt()");
         await this._stlink.set_debugreg32(DHCSR_REG, DHCSR_HALT);
@@ -200,36 +234,119 @@ class Stm32 {
         await this._stlink.set_debugreg32(AIRCR_REG, AIRCR_SYSRESETREQ);
         await this._stlink.get_debugreg32(AIRCR_REG);
     }
+    //check
+    async core_reset_halt() {
+        this._dbg.debug("Stm32.core_reset_halt()");
+        await this._stlink.set_debugreg32(DEMCR_REG, DEMCR_HALT_AFTER_RESET);
+        await this._stlink.set_debugreg32(AIRCR_REG, AIRCR_SYSRESETREQ);
+        await this.core_halt();
+        await this._stlink.get_debugreg32(Stm32.AIRCR_REG)
+        await this._dbg.debug(`Stm32.core_reset_halt(): DHCSR ${H32(this._stlink.get_debugreg32(DHCSR_REG))}`);
+
+    }
+    //check
+    async core_hard_reset_halt() {
+        this._dbg.debug('Stm32.core_hard_reset_halt()');
+        await this._stlink.set_nrst(0)
+        await this._stlink.set_debugreg32(DEMCR_REG, DEMCR_HALT_AFTER_RESET)
+        await this._stlink.set_nrst(1)
+        await this.core_halt()
+        await this._dbg.debug(`Stm32.core_hard_reset_halt(): DHCSR ${H32(this._stlink.get_debugreg32(DHCSR_REG))}`);
+    }
 
     async core_halt() {
         this._dbg.debug("Stm32.core_halt()");
         await this._stlink.set_debugreg32(DHCSR_REG, DHCSR_HALT);
     }
 
+    //check
+    async core_halt() {
+        this._dbg.debug("Stm32.core_halt()");
+        verbose = this._dbg._verbose;
+        if (verbose > 2) {
+            self._dbg.set_verbose(2);
+        }
+        i = 0;
+        while (((self._stlink.get_debugreg32(DHCSR_REG) & DHCSR_HALTED) != DHCSR_HALTED)) {
+            while (true) {
+                self._stlink.set_debugreg32(Stm32.DHCSR_REG, Stm32.DHCSR_HALT)
+                i += 1
+                if ((i & 0xff) == 0) {
+                    break;
+                }
+            }
+        }
+        this._dbg.set_verbose(verbose)
+        this._dbg.debug(`Halted after ${i} transactions`)
+    }
+    //check
     async core_step() {
         this._dbg.debug("Stm32.core_step()");
         await this._stlink.set_debugreg32(DHCSR_REG, DHCSR_STEP);
     }
-
+    //check
     async core_run() {
         this._dbg.debug("Stm32.core_run()");
         await this._stlink.set_debugreg32(DHCSR_REG, DHCSR_DEBUGEN);
     }
-
+    //check
     async core_nodebug() {
         this._dbg.debug("Stm32.core_nodebug()");
         await this._stlink.set_debugreg32(DHCSR_REG, DHCSR_DEBUGDIS);
     }
 
+    //check
     async flash_erase_all() {
         this._dbg.debug("Stm32.flash_mass_erase()");
         throw new Exception("Erasing FLASH is not implemented for this MCU");
     }
+    //check
 
     async flash_write(addr, data, { erase = false, verify = false, erase_sizes = null }) {
         let addr_str = (addr !== null) ? `0x{H32(addr)}` : 'None';
         this._dbg.debug(`Stm32.flash_write(${addr_str}, [data:${data.length}Bytes], erase=${erase}, verify=${verify}, erase_sizes=${erase_sizes})`);
         throw new Exception("Programing FLASH is not implemented for this MCU");
+    }
+    async flash_verify(addr, data) 
+    {
+        this._dbg.debug('Stm32.flash_verify');//(%s, [data:%dBytes])' % (('0x%08x' % addr) if addr is not None else 'None', len(data)))
+        length = data.length;
+        this._dbg.bargraph_start("Verify FLASH", {
+            "value_min": addr,
+            "value_max": addr + data.length
+        });
+
+        if (addr & 1) {
+            uneven = addr & 3;
+            block = data.slice(0,uneven);
+            data = data.slice(uneven);
+            if (block != (await this._stlink.get_mem8(addr, uneven)))
+            {
+                throw new Exception(`Verify error at non-aligned block address: ${H32(addr)})`);
+            }
+            addr += uneven;
+        }
+        while (data) {
+            block = data.slice(0,1024);
+            data = data.slice(1024);
+            if (block != this._stlink.get_mem32(addr, block.length))
+            {
+                throw new Exception(`Verify error at block address: ${H32(addr)})`);
+            }
+            addr += block.length;
+            this._dbg.bargraph_update({ "value": addr });
+        }
+        if (data.length & 1){
+            remainder = data.length & 3
+        }
+        block = data.slice (0,remainger);
+        block = block.slice(remainder);
+        if (block != self._stlink.get_mem8(addr, remainder))
+        {
+            throw new Exception(`Verify error at block address at non-aligned length: ${H32(addr)})`);
+        }
+        addr += remainder;
+        this._dbg.bargraph_done()
     }
 }
 

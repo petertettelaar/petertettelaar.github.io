@@ -16,6 +16,7 @@ const STLINK_DFU_COMMAND = 0xf3;
 const STLINK_SWIM_COMMAND = 0xf4;
 const STLINK_GET_CURRENT_MODE = 0xf5;
 const STLINK_GET_TARGET_VOLTAGE = 0xf7;
+const STLINK_APIV3_GET_VERSION_EX = 0xFB;
 
 const STLINK_MODE_DFU = 0x00;
 const STLINK_MODE_MASS = 0x01;
@@ -63,7 +64,13 @@ const STLINK_DEBUG_APIV2_START_TRACE_RX = 0x40;
 const STLINK_DEBUG_APIV2_STOP_TRACE_RX = 0x41;
 const STLINK_DEBUG_APIV2_GET_TRACE_NB = 0x42;
 const STLINK_DEBUG_APIV2_SWD_SET_FREQ = 0x43;
+const STLINK_DEBUG_APIV2_READMEM_16BIT =   0x47
+const STLINK_DEBUG_APIV2_WRITEMEM_16BIT =  0x48
+
 const STLINK_DEBUG_ENTER_SWD = 0xa3;
+
+const STLINK_DEBUG_APIV3_SET_COM_FREQ = 0x61
+const STLINK_DEBUG_APIV3_GET_COM_FREQ = 0x62
 
 const STLINK_DEBUG_APIV2_DRIVE_NRST_LOW = 0x00;
 const STLINK_DEBUG_APIV2_DRIVE_NRST_HIGH = 0x01;
@@ -81,9 +88,9 @@ const STLINK_DEBUG_APIV2_SWD_SET_FREQ_MAP = [
     [125000, 31],
     [100000, 40],
     [50000,  79],
-    [25000, 158],
-    [15000, 265],
-    [5000,  798]
+    [25000, 158] 
+  // [15000, 265],
+ //  [5000,  798]
 ];
 
 export default class Stlink {
@@ -97,11 +104,15 @@ export default class Stlink {
             this._dbg.debug(msg);
         }
     }
-
-    async init(swd_frequency = 1800000) {
+    //check
+    async init(swd_frequency = 4000000) {
         await this.read_version();
         await this.leave_state();
         await this.read_target_voltage();
+        if (this._ver_api == 3)
+        {
+            await this.set_swd_freq_v3(swd_frequency)
+        }
         if (this._ver_jtag >= 22) {
             await this.set_swd_freq(swd_frequency);
         }
@@ -109,6 +120,7 @@ export default class Stlink {
         await this.read_coreid();
     }
 
+    //check
     async clean_exit() {
         // WORKAROUND for OS/X 10.11+
         // ... read from ST-Link, must be performed even times
@@ -117,21 +129,36 @@ export default class Stlink {
             await this._connector.xfer([STLINK_GET_CURRENT_MODE], {"rx_len": 2});
         }
     }
-
+    //check
     async read_version() {
         // WORKAROUNF for OS/X 10.11+
         // ... retry XFER if first is timeout.
         // only during this command it is necessary
-        let rx = await this._connector.xfer([STLINK_GET_VERSION, 0x80], {"rx_len": 6, "retry": 2 });
+        let rx = await this._connector.xfer([STLINK_GET_VERSION, 0x80], {"rx_len": 6, "retry": 2 ,"tout":200});
         let ver = rx.getUint16(0);
-
         let dev_ver = this._connector.version;
         this._ver_stlink = ((ver >> 12) & 0x0f);
         this._ver_jtag = ((ver >> 6) & 0x3f);
         this._ver_swim = ((dev_ver === "V2") ? (ver & 0x3f) : null);
         this._ver_mass = ((dev_ver === "V2-1") ? (ver & 0x3f) : null);
-        this._ver_api = ((this._ver_jtag > 11) ? 2 : 1);
+        this._ver_api =  (( dev_ver === 'V3') ? (3) : (((this._ver_jtag > 11) ? 2 : 1) )) ;
+        if (dev_ver === "V3") {
+            rx_v3 = this._connector.xfer([STLINK_APIV3_GET_VERSION_EX, 0x80], {"rx_len": 16})
+            self._ver_swim = getUint32(0,true);
+            self._ver_jtag = getUint32(4,true);
+            self._ver_mass = getUint32(8,true);
+            self._ver_bridge = getUint32(12,true);
+        }
         this._ver_str = `${dev_ver} V${this._ver_stlink}J${this._ver_jtag}`;
+        if (dev_ver === "V3") 
+        {
+            this._ver_str += `M${this._ver_mass}`;
+            this._ver_str += `B${this._ver_bridge}`;
+            this._ver_str += `S${this._ver_swim}`;
+        }
+        if (dev_ver === "V3E"){
+            this._ver_str += `M${this._ver_mass}`;
+        }
         if (dev_ver === "V2") {
             this._ver_str += ("S" + this._ver_swim);
         }
@@ -141,59 +168,79 @@ export default class Stlink {
         if (this.ver_api === 1) {
             throw new Warning(`ST-Link/${this._ver_str} is not supported, please upgrade firmware.`);
         }
-        if (this.ver_jtag < 21) {
+        if ((this.ver_jtag < 32) && (this._ver_api === 2)) 
+        {
             throw new Warning(`ST-Link/${this._ver_str} is not recent firmware, please upgrade first - functionality is not guaranteed.`);
         }
+        if ((this.ver_jtag < 3 ) && (this._ver_api === 3)) 
+        {
+            throw new Warning(`ST-Link/${this._ver_str} is not recent firmware, please upgrade first - functionality is not guaranteed.`);
+        }
+     
+
     }
 
     get maximum_transfer_size() {
         return STLINK_MAXIMUM_TRANSFER_SIZE;
     }
-
+    //check
     get ver_stlink() {
         return this._ver_stlink;
     }
-
+    //check
     get ver_jtag() {
         return this._ver_jtag;
     }
 
+    //check
     get ver_mass() {
         return this._ver_mass;
     }
-
+    //check
+    get _ver_bridge() {
+        return this._ver_bridge;
+    }
+     //check
     get ver_swim() {
         return this._ver_swim;
     }
-
+    //check
     get ver_api() {
         return this._ver_api;
     }
-
+     //check
     get ver_str() {
         return this._ver_str;
     }
-
+     //check
     async read_target_voltage() {
         let rx = await this._connector.xfer([STLINK_GET_TARGET_VOLTAGE], {"rx_len": 8});
         let a0 = rx.getUint32(0, true);
         let a1 = rx.getUint32(4, true);
         this._target_voltage = (a0 !== 0) ? (2 * a1 * 1.2 / a0) : null;
     }
-
+    //check
     get target_voltage() {
         return this._target_voltage;
     }
 
+    //check
     async read_coreid() {
         let rx = await this._connector.xfer([STLINK_DEBUG_COMMAND, STLINK_DEBUG_READCOREID], {"rx_len": 4});
-        this._coreid = rx.getUint32(0, true);
+        if (rx.length < 4)
+        {
+            this._coreid =0;
+        }
+        else
+        {
+            this._coreid = rx.getUint32(0, true);
+        }
     }
-
+    //check
     get coreid() {
         return this._coreid;
     }
-
+    //check
     async leave_state() {
         let rx = await this._connector.xfer([STLINK_GET_CURRENT_MODE], {"rx_len": 2});
         let state = rx.getUint8(0);
@@ -209,7 +256,7 @@ export default class Stlink {
             await this._connector.xfer([STLINK_SWIM_COMMAND, STLINK_SWIM_EXIT]);
         }
     }
-
+    //check
     async set_swd_freq(freq = 1800000) {
         for (let [f, divisor] of STLINK_DEBUG_APIV2_SWD_SET_FREQ_MAP) {
             if (freq >= f) {
@@ -225,18 +272,52 @@ export default class Stlink {
         }
         throw new Exception("Selected SWD frequency is too low");
     }
+    //check
+    async set_swd_freq_v3(freq = 1800000) {
+        let cmd = [STLINK_DEBUG_COMMAND, STLINK_DEBUG_APIV3_GET_COM_FREQ, 0];
+        let rx = await this._connector.xfer(cmd, {"rx_len": 52});
+        i = 0;
+        freq_khz = 0;
+        while ( i < rx[8] )
+        {
+            freq_khz =  rx.getUint32s( 12 + 4 * i,true);
+            if ((freq / 1000) >= freq_khz)
+            {
+                break;
+            }
+            i = i + 1;
+        }
+        this._dbg.verbose(`Using ${freq_khz} khz for ${freq/ 1000} kHz requested`);
+        if (i === rx[8])
+        {
+            throw new Exception("Selected SWD frequency is too low")
+        }
 
+        cmd = new ArrayBuffer(8);
+        let view = new DataView(cmd);
+        view.setUint8(0, STLINK_DEBUG_COMMAND);
+        view.setUint8(1, STLINK_DEBUG_APIV3_SET_COM_FREQ);
+        view.setUint8(2,0);
+        view.setUint8(3,0);
+        view.setUint32(4, freq_khz, true);
+        rx = self._connector.xfer(cmd, rx_len=2)
+        if (rx[0] != 0x80)
+        {
+            throw new Exception("Error switching SWD frequency");
+        }
+    }
+    //check
     async enter_debug_swd() {
         await this._connector.xfer([STLINK_DEBUG_COMMAND, STLINK_DEBUG_APIV2_ENTER, STLINK_DEBUG_ENTER_SWD], {"rx_len": 2});
         this._debug("Entered SWD debug mode");
     }
-
+    //check
     async debug_resetsys() {
         await this._connector.xfer([STLINK_DEBUG_COMMAND, STLINK_DEBUG_APIV2_RESETSYS], {"rx_len": 2});
         this._debug("Sent reset");
     }
-
-    set_debugreg32(addr, data) {
+    //check
+    async set_debugreg32(addr, data) {
         if (addr % 4) {
             throw new Exception("get_mem_short address is not in multiples of 4");
         }
@@ -246,9 +327,9 @@ export default class Stlink {
         view.setUint8(1, STLINK_DEBUG_APIV2_WRITEDEBUGREG);
         view.setUint32(2, addr, true);
         view.setUint32(6, data, true);
-        return this._connector.xfer(cmd, {"rx_len": 2});
+        return await this._connector.xfer(cmd, {"rx_len": 2});
     }
-
+    //check
     async get_debugreg32(addr) {
         if (addr % 4) {
             throw new Exception("get_mem_short address is not in multiples of 4");
@@ -261,7 +342,7 @@ export default class Stlink {
         let rx = await this._connector.xfer(cmd, {"rx_len": 8});
         return rx.getUint32(4, true);
     }
-
+    //check
     async get_debugreg16(addr) {
         if (addr % 2) {
             throw new Exception("get_mem_short address is not in even");
@@ -272,30 +353,30 @@ export default class Stlink {
         }
         return (val & 0xffff);
     }
-
+    //check
     async get_debugreg8(addr) {
         let val = await this.get_debugreg32(addr & 0xfffffffc);
         val >>= (addr % 4) << 3;
         return (val & 0xff);
     }
-
+    //check
     async get_reg(reg) {
         let cmd = [STLINK_DEBUG_COMMAND, STLINK_DEBUG_APIV2_READREG, reg];
         let rx = await this._connector.xfer(cmd, {"rx_len": 8});
         return rx.getUint32(4, true);
     }
-
-    set_reg(reg, data) {
+    //check
+    async set_reg(reg, data) {
         let cmd = new ArrayBuffer(7);
         let view = new DataView(cmd);
         view.setUint8(0, STLINK_DEBUG_COMMAND);
         view.setUint8(1, STLINK_DEBUG_APIV2_WRITEREG);
         view.setUint8(2, reg);
         view.setUint32(3, data, true);
-        return this._connector.xfer(cmd, {"rx_len": 2});
+        return await this._connector.xfer(cmd, {"rx_len": 2});
     }
-
-    get_mem32(addr, size) {
+    //check
+    async get_mem32(addr, size) {
         if (addr % 4) {
             throw new Exception("get_mem32: Address must be in multiples of 4");
         }
@@ -311,10 +392,10 @@ export default class Stlink {
         view.setUint8(1, STLINK_DEBUG_READMEM_32BIT);
         view.setUint32(2, addr, true);
         view.setUint32(6, size, true);
-        return this._connector.xfer(cmd, {"rx_len": size});
+        return await this._connector.xfer(cmd, {"rx_len": size});
     }
-
-    set_mem32(addr, data) {
+    //check
+    async set_mem32(addr, data) {
         if (addr % 4) {
             throw new Exception("set_mem32: Address must be in multiples of 4");
         }
@@ -330,10 +411,10 @@ export default class Stlink {
         view.setUint8(1, STLINK_DEBUG_WRITEMEM_32BIT);
         view.setUint32(2, addr, true);
         view.setUint32(6, data.length, true);
-        return this._connector.xfer(cmd, {"data": data});
+        return await this._connector.xfer(cmd, {"data": data});
     }
-
-    get_mem8(addr, size) {
+    //check
+    async get_mem8(addr, size) {
         if (size > 64) {
             throw new Exception(`get_mem8: Size for reading is ${size} but maximum can be 64`);
         }
@@ -343,10 +424,10 @@ export default class Stlink {
         view.setUint8(1, STLINK_DEBUG_READMEM_8BIT);
         view.setUint32(2, addr, true);
         view.setUint32(6, size, true);
-        return this._connector.xfer(cmd, {"rx_len": size});
+        return await this._connector.xfer(cmd, {"rx_len": size});
     }
-
-    set_mem8(addr, data) {
+    //check
+    async set_mem8(addr, data) {
         if (data.length > 64) {
             throw new Exception(`set_mem8: Size for writing is ${data.length} but maximum can be 64`);
         }
@@ -356,7 +437,59 @@ export default class Stlink {
         view.setUint8(1, STLINK_DEBUG_WRITEMEM_8BIT);
         view.setUint32(2, addr, true);
         view.setUint32(6, data.length, true);
-        return this._connector.xfer(cmd, {"data": data});
+        return await this._connector.xfer(cmd, {"data": data});
+
+        // while(datablock):
+        //     block = datablock[:64]
+        //     datablock = datablock[64:]
+        //     cmd = [Stlink.STLINK_DEBUG_COMMAND, Stlink.STLINK_DEBUG_WRITEMEM_8BIT]
+        //     cmd.extend(list(addr.to_bytes(4, byteorder='little')))
+        //     cmd.extend(list(len(block).to_bytes(4, byteorder='little')))
+        //     self._connector.xfer(cmd, block)
+        //     addr = addr + 64
+    }
+    async get_mem16(addr, size) {
+        if (addr % 2) {
+            throw new Exception(`get_mem16: Address must be in multiples of 2`);
+        }
+        if (data.length % 2) {
+            throw new Exception(`get_mem16: Size must be in multiples of 2`);
+        }
+        if (data.length > Stlink.STLINK_MAXIMUM_TRANSFER_SIZE) {
+            throw new Exception(`get_mem16: Size for writing is ${data.length} but maximum can be ${STLINK_MAXIMUM_TRANSFER_SIZE}`);
+        }
+        cmd = [Stlink.STLINK_DEBUG_COMMAND, Stlink.STLINK_DEBUG_APIV2_READMEM_16BIT]
+        let cmd = new ArrayBuffer(10);
+        let view = new DataView(cmd);
+        view.setUint8(0, STLINK_DEBUG_COMMAND);
+        view.setUint8(1, STLINK_DEBUG_APIV2_READMEM_16BIT);
+        view.setUint32(2, addr, true);
+        view.setUint32(6, size, true);
+        return await this._connector.xfer(cmd, { "rx_len": size });
+    }
+    async set_mem16(addr, size, data) {
+
+        if (addr % 2) {
+            throw new Exception(`set_mem16: Address must be in multiples of 2`);
+        }
+        if (data.length % 2) {
+            throw new Exception(`set_mem16: Size must be in multiples of 2`);
+        }
+        if (data.length > Stlink.STLINK_MAXIMUM_TRANSFER_SIZE) {
+            throw new Exception(`set_mem16: Size for writing is ${data.length} but maximum can be ${STLINK_MAXIMUM_TRANSFER_SIZE}`);
+        }
+        
+        let cmd = new ArrayBuffer(10);
+        let view = new DataView(cmd);
+        view.setUint8(0, STLINK_DEBUG_COMMAND);
+        view.setUint8(1, STLINK_DEBUG_APIV2_WRITEMEM_16BIT);
+        view.setUint32(2, addr, true);
+        view.setUint32(6, data.length, true);
+        return await this._connector.xfer(cmd, {"data": data});
+    }
+    async set_nrst( action)
+    {
+        await this._connector.xfer([STLINK_DEBUG_COMMAND, STLINK_DEBUG_APIV2_DRIVE_NRST, action], rx_len=2);
     }
 }
 
