@@ -16,6 +16,7 @@ import * as semihosting from './semihosting.js';
 import { Stm32 } from './stm32.js';
 import { Stm32FP, Stm32FPXL } from './stm32fp.js';
 import { Stm32FS } from './stm32fs.js';
+import { Stm32L0 } from './stm32l0.js';
 
 let drivers = {
     Stm32: Stm32,
