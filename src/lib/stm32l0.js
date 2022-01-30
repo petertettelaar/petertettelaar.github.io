@@ -62,7 +62,12 @@ class Flash {
             this._nvm = Flash.STM32L1_NVM_PHY
             this._page_size = 256
         }
-        await this.unlock()
+       
+    }
+
+    async init() {
+        
+        await this.unlock();
     }
 
     async clear_sr() {
