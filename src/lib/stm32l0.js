@@ -129,8 +129,8 @@ class Flash {
 
     async erase_pages(addr, size) {
         this._dbg.verbose('erase_pages from addr ' + addr + ' for ' + size + 'byte');
-        erase_addr = addr & ~(this._page_size - 1);
-        last_addr = (addr + size + self._page_size - 1) & ~(this._page_size - 1);
+        let erase_addr = addr & ~(this._page_size - 1);
+        let last_addr = (addr + size + self._page_size - 1) & ~(this._page_size - 1);
         this._dbg.bargraph_start("Writing FLASH", {
             "value_min": erase_addr,
             "value_max": last_addr
